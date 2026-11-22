@@ -1,12 +1,27 @@
 pipeline {
     agent any
 
+    options {
+        disableConcurrentBuilds()
+    }
+
     triggers {
         pollSCM('H/2 * * * *')
     }
 
+    parameters {
+        booleanParam(
+            name: 'SIMULATE_BAD_DEPLOY',
+            defaultValue: false,
+            description: 'Deploy a non-existent image tag to demonstrate the automatic rollback'
+        )
+    }
+
     environment {
-        IMAGE = 'aceest-fitness'
+        DOCKERHUB_USER = 'YOUR_DOCKERHUB_USER'
+        IMAGE          = "${DOCKERHUB_USER}/assignment-2-devops"
+        TAG            = "build-${BUILD_NUMBER}"
+        DEPLOYMENT     = 'assignment-2-devops-rolling'
     }
 
     stages {
@@ -28,9 +43,9 @@ pipeline {
             }
         }
 
-        stage('Unit Tests') {
+        stage('Unit Tests + Coverage') {
             steps {
-                sh '.venv/bin/python -m pytest -q --junitxml=report.xml'
+                sh '.venv/bin/python -m pytest -q --junitxml=report.xml --cov=app --cov-report=xml:coverage.xml'
             }
             post {
                 always {
@@ -39,47 +54,69 @@ pipeline {
             }
         }
 
-        stage('Docker Build') {
+        stage('SonarQube Analysis') {
             steps {
-                sh 'docker build -t ${IMAGE}:${BUILD_NUMBER} -t ${IMAGE}:latest .'
-            }
-        }
-
-        stage('Deploy to Staging') {
-            steps {
-                sh '''
-                    docker rm -f aceest-staging || true
-                    docker run -d --name aceest-staging -p 5001:5000 ${IMAGE}:${BUILD_NUMBER}
-                    sleep 5
-                    curl -fs http://localhost:5001/health
-                '''
-            }
-        }
-
-        stage('Approve Production') {
-            steps {
-                timeout(time: 10, unit: 'MINUTES') {
-                    input message: 'Staging looks good. Promote to production?'
+                script {
+                    scannerHome = tool 'SonarScanner'
+                }
+                withSonarQubeEnv('sonarqube') {
+                    sh "${scannerHome}/bin/sonar-scanner"
                 }
             }
         }
 
-        stage('Deploy to Production (with rollback)') {
+        stage('Quality Gate') {
             steps {
-                sh '''
-                    PREV_IMAGE=$(docker inspect --format '{{.Config.Image}}' aceest-prod 2>/dev/null || true)
-                    docker rm -f aceest-prod || true
-                    docker run -d --name aceest-prod -p 5002:5000 ${IMAGE}:${BUILD_NUMBER}
-                    sleep 5
-                    if ! curl -fs http://localhost:5002/health; then
-                        echo "Health check failed - rolling back"
-                        docker rm -f aceest-prod || true
-                        if [ -n "$PREV_IMAGE" ]; then
-                            docker run -d --name aceest-prod -p 5002:5000 "$PREV_IMAGE"
-                        fi
-                        exit 1
-                    fi
-                '''
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+
+        stage('Docker Build') {
+            steps {
+                sh 'docker build -t ${IMAGE}:${TAG} -t ${IMAGE}:latest .'
+            }
+        }
+
+        stage('Tests inside Container') {
+            steps {
+                sh 'docker run --rm ${IMAGE}:${TAG} python -m pytest -q'
+            }
+        }
+
+        stage('Push to Docker Hub') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'dockerhub-creds',
+                                                  usernameVariable: 'DH_USER',
+                                                  passwordVariable: 'DH_PASS')]) {
+                    sh '''
+                        echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin
+                        docker push ${IMAGE}:${TAG}
+                        docker push ${IMAGE}:latest
+                    '''
+                }
+            }
+        }
+
+        stage('Deploy to Kubernetes (rolling update + rollback)') {
+            steps {
+                script {
+                    // First run only: create the Deployment and Service from the manifest
+                    sh 'kubectl get deployment ${DEPLOYMENT} || kubectl apply -f k8s/rolling.yaml'
+
+                    def newImage = params.SIMULATE_BAD_DEPLOY ? "${IMAGE}:does-not-exist" : "${IMAGE}:${TAG}"
+                    try {
+                        sh "kubectl set image deployment/${DEPLOYMENT} assignment-2-devops=${newImage}"
+                        sh "kubectl rollout status deployment/${DEPLOYMENT} --timeout=90s"
+                        sh '''kubectl exec deploy/${DEPLOYMENT} -- python -c "import urllib.request as u; print(u.urlopen('http://localhost:5000/health').read().decode())"'''
+                    } catch (err) {
+                        echo 'Deployment failed - rolling back to the last stable version'
+                        sh "kubectl rollout undo deployment/${DEPLOYMENT}"
+                        sh "kubectl rollout status deployment/${DEPLOYMENT} --timeout=90s"
+                        error('Deployment failed and was rolled back')
+                    }
+                }
             }
         }
     }
@@ -89,7 +126,7 @@ pipeline {
             echo 'CI/CD pipeline completed successfully'
         }
         failure {
-            echo 'Pipeline failed - deployment was not completed'
+            echo 'Pipeline failed - see the failing stage above'
         }
     }
 }

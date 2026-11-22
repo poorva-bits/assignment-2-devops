@@ -1,0 +1,105 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: assignment-2-devops-a
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: assignment-2-devops-a}
+  template:
+    metadata:
+      labels: {app: assignment-2-devops-a}
+    spec:
+      containers:
+        - name: assignment-2-devops
+          image: YOUR_DOCKERHUB_USER/assignment-2-devops-fitness:2.1
+          ports:
+            - containerPort: 5000
+          readinessProbe:
+            httpGet: {path: /health, port: 5000}
+            initialDelaySeconds: 3
+            periodSeconds: 3
+          resources:
+            requests: {cpu: 25m, memory: 64Mi}
+            limits: {memory: 256Mi}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: assignment-2-devops-b
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: assignment-2-devops-b}
+  template:
+    metadata:
+      labels: {app: assignment-2-devops-b}
+    spec:
+      containers:
+        - name: assignment-2-devops
+          image: YOUR_DOCKERHUB_USER/assignment-2-devops-fitness:3.0
+          ports:
+            - containerPort: 5000
+          readinessProbe:
+            httpGet: {path: /health, port: 5000}
+            initialDelaySeconds: 3
+            periodSeconds: 3
+          resources:
+            requests: {cpu: 25m, memory: 64Mi}
+            limits: {memory: 256Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: assignment-2-devops-a
+spec:
+  selector: {app: assignment-2-devops-a}
+  ports:
+    - port: 80
+      targetPort: 5000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: assignment-2-devops-b
+spec:
+  selector: {app: assignment-2-devops-b}
+  ports:
+    - port: 80
+      targetPort: 5000
+---
+# Default route: everyone gets version A (2.1)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: assignment-2-devops-ab-main
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: ab.assignment-2-devops.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: {name: assignment-2-devops-a, port: {number: 80}}
+---
+# Requests carrying header "X-Version: B" are routed to version B (3.0)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: assignment-2-devops-ab-b
+  annotations:
+    nginx.ingress.kubernetes.io/canary: "true"
+    nginx.ingress.kubernetes.io/canary-by-header: "X-Version"
+    nginx.ingress.kubernetes.io/canary-by-header-value: "B"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: ab.assignment-2-devops.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: {name: assignment-2-devops-b, port: {number: 80}}

@@ -1,0 +1,89 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: assignment-2-devops-live
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: assignment-2-devops-live}
+  template:
+    metadata:
+      labels: {app: assignment-2-devops-live}
+    spec:
+      containers:
+        - name: assignment-2-devops
+          image: YOUR_DOCKERHUB_USER/assignment-2-devops-fitness:2.1
+          ports:
+            - containerPort: 5000
+          readinessProbe:
+            httpGet: {path: /health, port: 5000}
+            initialDelaySeconds: 3
+            periodSeconds: 3
+          resources:
+            requests: {cpu: 25m, memory: 64Mi}
+            limits: {memory: 256Mi}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: assignment-2-devops-shadow
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: assignment-2-devops-shadow}
+  template:
+    metadata:
+      labels: {app: assignment-2-devops-shadow}
+    spec:
+      containers:
+        - name: assignment-2-devops
+          image: YOUR_DOCKERHUB_USER/assignment-2-devops-fitness:3.0
+          ports:
+            - containerPort: 5000
+          readinessProbe:
+            httpGet: {path: /health, port: 5000}
+            initialDelaySeconds: 3
+            periodSeconds: 3
+          resources:
+            requests: {cpu: 25m, memory: 64Mi}
+            limits: {memory: 256Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: assignment-2-devops-live
+spec:
+  selector: {app: assignment-2-devops-live}
+  ports:
+    - port: 80
+      targetPort: 5000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: assignment-2-devops-shadow
+spec:
+  selector: {app: assignment-2-devops-shadow}
+  ports:
+    - port: 80
+      targetPort: 5000
+---
+# Users are served by "live" (2.1); a copy of every request is mirrored to "shadow" (3.0)
+# and the shadow's responses are discarded.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: assignment-2-devops-shadow
+  annotations:
+    nginx.ingress.kubernetes.io/mirror-target: "http://assignment-2-devops-shadow.default.svc.cluster.local$request_uri"
+    nginx.ingress.kubernetes.io/mirror-request-body: "on"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: shadow.assignment-2-devops.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: {name: assignment-2-devops-live, port: {number: 80}}

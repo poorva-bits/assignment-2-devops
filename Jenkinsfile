@@ -18,7 +18,7 @@ pipeline {
     }
 
     environment {
-        DOCKERHUB_USER = 'YOUR_DOCKERHUB_USER'
+        DOCKERHUB_USER = 'poorvaramnani'
         IMAGE          = "${DOCKERHUB_USER}/assignment-2-devops"
         TAG            = "build-${BUILD_NUMBER}"
         DEPLOYMENT     = 'assignment-2-devops-rolling'

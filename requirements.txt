@@ -3,3 +3,4 @@ pytest
 matplotlib
 fpdf2
 gunicorn
+pytest-cov

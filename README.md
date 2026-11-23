@@ -84,7 +84,7 @@ All manifests are in `k8s/` and all five run side by side in the cluster.
 
 ### Rollback
 
-- **Pipeline:** a failed rollout or health check triggers `kubectl rollout undo` automatically.
+- **Pipeline:** a failed rollout or health check triggers `kubectl rollout undo` automatically
 - **Blue-green:** point the Service selector back to the previous slot.
 - **Manual:** `kubectl rollout undo` / `kubectl rollout history`.
 

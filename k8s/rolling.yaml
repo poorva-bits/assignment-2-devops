@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
         - name: assignment-2-devops
-          image: poorvaramnani/assignment-2-devops-fitness:2.1
+          image: poorvaramnani/assignment-2-devops:2.1
           ports:
             - containerPort: 5000
           readinessProbe:

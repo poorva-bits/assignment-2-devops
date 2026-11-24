@@ -6,7 +6,7 @@ This repository automates build, test, quality analysis, containerisation and de
 
 - Evidence (screenshots, screen recording): https://github.com/poorva-bits/assignment-2-devops-evidence
 - Assignment 1 repository: https://github.com/poorva-bits/assignment-1-devops
-- Docker Hub: https://hub.docker.com/r/poorvaramnani/assignment-2
+- Docker Hub: [https://hub.docker.com/r/poorvaramnani/assignment-2](https://hub.docker.com/r/poorvaramnani/assignment-2-devops/tags)
 
 
 ## Repository structure
